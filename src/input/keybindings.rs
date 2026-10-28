@@ -19,6 +19,7 @@ pub(crate) enum KeybindMatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeybindAction {
     NewWorkspace,
+    NewLocalWorkspace,
     NewWorktree,
     OpenWorktree,
     RemoveWorktree,
@@ -100,6 +101,10 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.settings, KeybindAction::Settings),
         (&keybinds.workspace_picker, KeybindAction::WorkspacePicker),
         (&keybinds.new_workspace, KeybindAction::NewWorkspace),
+        (
+            &keybinds.new_local_workspace,
+            KeybindAction::NewLocalWorkspace,
+        ),
         (&keybinds.new_worktree, KeybindAction::NewWorktree),
         (&keybinds.open_worktree, KeybindAction::OpenWorktree),
         (&keybinds.remove_worktree, KeybindAction::RemoveWorktree),
@@ -259,6 +264,55 @@ mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     use super::*;
+
+    #[test]
+    fn local_home_workspace_is_unbound_by_default_and_parses_ctrl_n() {
+        let defaults = crate::config::Config::default().keybinds();
+        assert!(
+            defaults.new_local_workspace.bindings.is_empty(),
+            "Local home workspace must not claim a key by default, but was {:?}",
+            defaults.new_local_workspace
+        );
+        let config: crate::config::Config =
+            toml::from_str("[keys]\nnew_local_workspace = ['ctrl+n']")
+                .expect("The local workspace shortcut must accept Ctrl-n configuration");
+        let diagnostics = config.collect_diagnostics();
+        assert!(
+            diagnostics.is_empty(),
+            "The local shortcut must parse without diagnostics, but got {diagnostics:?}"
+        );
+        let binding = resolve_direct_binding(
+            &config.keybinds(),
+            &TerminalKey::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+        );
+        assert!(
+            matches!(
+                binding,
+                Some(KeybindMatch::Action(KeybindAction::NewLocalWorkspace))
+            ),
+            "Ctrl-n must resolve to the client-only local workspace action, but got {binding:?}"
+        );
+        let effective = config.keys.local_profile(&config.keybinds());
+        let serialized =
+            toml::to_string(&effective).expect("Effective keys must serialize as TOML");
+        let round_trip: crate::config::KeysConfig =
+            toml::from_str(&serialized).expect("The effective local shortcut must deserialize");
+        let round_trip_config = crate::config::Config {
+            keys: round_trip,
+            ..Default::default()
+        };
+        let restored = resolve_direct_binding(
+            &round_trip_config.keybinds(),
+            &TerminalKey::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+        );
+        assert!(
+            matches!(
+                restored,
+                Some(KeybindMatch::Action(KeybindAction::NewLocalWorkspace))
+            ),
+            "The effective config must preserve Ctrl-n for Local, but got {restored:?}"
+        );
+    }
 
     #[test]
     fn clear_pane_is_unbound_by_default_and_configurable() {

@@ -114,6 +114,9 @@ impl ClientShellState {
     }
 
     pub(crate) fn retire_endpoint(&mut self, endpoint_id: &ClientEndpointId) {
+        if endpoint_id.is_local() {
+            self.cancel_local_home_workspaces();
+        }
         self.clear_machine_diagnostic(endpoint_id);
         if endpoint_id == &self.active_endpoint_id {
             self.pending_workspace_highlight = None;
@@ -160,6 +163,9 @@ impl ClientShellState {
     }
 
     pub(crate) fn mark_endpoint_disconnected(&mut self, endpoint_id: &ClientEndpointId) {
+        if endpoint_id.is_local() {
+            self.cancel_local_home_workspaces();
+        }
         self.set_endpoint_status(endpoint_id, ClientEndpointStatus::Reconnecting);
         if endpoint_id == &self.active_endpoint_id {
             let pending = self.pending_requests.keys().cloned().collect::<Vec<_>>();

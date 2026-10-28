@@ -343,6 +343,8 @@ pub struct KeysConfig {
     pub settings: BindingConfig,
     /// Create a new workspace. Default: "prefix+shift+n"
     pub new_workspace: BindingConfig,
+    /// Create a workspace in the client home directory on Local. Unset by default.
+    pub new_local_workspace: BindingConfig,
     /// Create a Git worktree from the selected workspace. Default: "prefix+shift+g"
     pub new_worktree: BindingConfig,
     /// Open an existing Git worktree from the selected workspace. Unset by default.
@@ -480,6 +482,8 @@ pub(crate) struct KeysConfigOverlay {
     settings: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     new_workspace: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_local_workspace: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     new_worktree: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -647,6 +651,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(help);
         apply_field!(settings);
         apply_field!(new_workspace);
+        apply_field!(new_local_workspace);
         apply_field!(new_worktree);
         apply_field!(open_worktree);
         apply_field!(remove_worktree);
@@ -752,6 +757,7 @@ impl KeysConfig {
         copy_effective_action_field!(help, keybinds.help);
         copy_effective_action_field!(settings, keybinds.settings);
         copy_effective_action_field!(new_workspace, keybinds.new_workspace);
+        copy_effective_action_field!(new_local_workspace, keybinds.new_local_workspace);
         copy_effective_action_field!(new_worktree, keybinds.new_worktree);
         copy_effective_action_field!(open_worktree, keybinds.open_worktree);
         copy_effective_action_field!(remove_worktree, keybinds.remove_worktree);
@@ -1124,6 +1130,7 @@ impl Default for KeysConfig {
             help: BindingConfig::one("prefix+?"),
             settings: BindingConfig::one("prefix+s"),
             new_workspace: BindingConfig::one("prefix+shift+n"),
+            new_local_workspace: BindingConfig::empty(),
             new_worktree: BindingConfig::one("prefix+shift+g"),
             open_worktree: BindingConfig::empty(),
             remove_worktree: BindingConfig::empty(),

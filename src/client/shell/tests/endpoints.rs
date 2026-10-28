@@ -1,5 +1,7 @@
 use super::*;
 
+#[path = "local_home_workspace.rs"]
+mod local_home_workspace;
 #[path = "workspace_navigation.rs"]
 mod workspace_navigation;
 use crate::client::endpoint::{

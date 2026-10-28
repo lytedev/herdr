@@ -80,6 +80,10 @@ impl ClientShellState {
                     outcome.resize = true;
                     return;
                 }
+                if action == crate::input::KeybindAction::NewLocalWorkspace {
+                    self.begin_local_home_workspace(crate::integration::home_dir(), outcome);
+                    return;
+                }
                 if action == crate::input::KeybindAction::NewWorkspace {
                     if self.config.prompt_new_workspace_name {
                         self.open_new_workspace_overlay();
@@ -266,6 +270,75 @@ impl ClientShellState {
                 }
             }
         }
+    }
+
+    pub(super) fn begin_local_home_workspace(
+        &mut self,
+        home: std::io::Result<std::path::PathBuf>,
+        outcome: &mut ClientShellInput,
+    ) {
+        let Some(cwd) = home
+            .ok()
+            .filter(|home| home.is_absolute())
+            .and_then(|home| home.to_str().map(str::to_owned))
+        else {
+            outcome.repaint |=
+                self.receive_endpoint_unavailable("Local home directory is unavailable".into());
+            return;
+        };
+        let Some(boot_id) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| {
+                endpoint.endpoint_id.is_local() && endpoint.status == ClientEndpointStatus::Online
+            })
+            .and_then(|endpoint| endpoint.snapshot.as_ref())
+            .map(|snapshot| snapshot.boot_id.clone())
+        else {
+            outcome.repaint |= self.receive_endpoint_unavailable("Local is not ready".into());
+            return;
+        };
+        self.pending_local_workspaces.push((boot_id, cwd));
+        self.pending_workspace_highlight = None;
+        self.pending_agent_reveal = None;
+        outcome.actions.push(ClientShellAction::ActivateEndpoint {
+            endpoint_id: ClientEndpointId::Local,
+            target: None,
+        });
+        outcome.repaint = true;
+    }
+
+    pub(crate) fn take_local_home_workspace_actions(&mut self) -> Vec<ClientShellAction> {
+        let mut outcome = ClientShellInput::default();
+        for (boot_id, cwd) in std::mem::take(&mut self.pending_local_workspaces) {
+            if !self.active_endpoint_id.is_local()
+                || !self.endpoint_is_online(&ClientEndpointId::Local)
+                || self
+                    .snapshot
+                    .as_ref()
+                    .is_none_or(|snapshot| snapshot.boot_id != boot_id)
+            {
+                self.receive_endpoint_unavailable("Local changed or became unavailable".into());
+                continue;
+            }
+            self.push_endpoint_method(
+                crate::api::schema::Method::WorkspaceCreate(
+                    crate::api::schema::WorkspaceCreateParams {
+                        source_workspace_id: None,
+                        cwd: Some(cwd),
+                        focus: true,
+                        label: None,
+                        env: Default::default(),
+                    },
+                ),
+                &mut outcome,
+            );
+        }
+        outcome.actions
+    }
+
+    pub(crate) fn cancel_local_home_workspaces(&mut self) {
+        self.pending_local_workspaces.clear();
     }
 
     pub(super) fn request_selection_copy(&mut self, outcome: &mut ClientShellInput, live: bool) {

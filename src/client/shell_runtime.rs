@@ -239,6 +239,11 @@ pub(super) fn begin_endpoint_activation(
         return Ok(());
     }
     state.deferred_local_activation = None;
+    if !endpoint_id.is_local() || !local_activation_metadata_ready(state, endpoints) {
+        if let Some(shell) = state.shell.as_mut() {
+            shell.cancel_local_home_workspaces();
+        }
+    }
     if endpoint_id.is_local() && !local_activation_metadata_ready(state, endpoints) {
         state.deferred_local_activation = Some(endpoint::EndpointActivationIntent {
             endpoint_id,
@@ -281,6 +286,17 @@ pub(super) fn begin_endpoint_activation(
             .connection(&endpoint_id)
             .is_some_and(|connection| connection.surface_active);
     if already_active {
+        if let Some(shell) = state.shell.as_mut() {
+            let actions = shell.take_local_home_workspace_actions();
+            dispatch_client_shell_actions(
+                actions,
+                endpoint_commands,
+                endpoints,
+                Some(shell),
+                &mut state.detached_process_children,
+                scheduled_activation,
+            )?;
+        }
         if let (Some(shell), Some(target)) = (state.shell.as_mut(), target) {
             let actions = shell.focus_endpoint_target(target);
             let (_, repaint) = dispatch_client_shell_actions(
@@ -338,6 +354,7 @@ pub(super) fn begin_endpoint_activation(
         ),
         Err(endpoint::ActivationBeginError::Preflight(error)) => {
             if let Some(shell) = state.shell.as_mut() {
+                shell.cancel_local_home_workspaces();
                 shell.receive_endpoint_unavailable(format!(
                     "{}: {error}",
                     shell.endpoint_label(&endpoint_id)
@@ -435,6 +452,9 @@ pub(super) fn complete_endpoint_activation(
             successor: next,
             ..
         } => {
+            if let Some(shell) = state.shell.as_mut() {
+                shell.cancel_local_home_workspaces();
+            }
             if next.is_none() {
                 if let Some(shell) = state.shell.as_mut() {
                     shell.receive_endpoint_unavailable(error);
@@ -448,6 +468,17 @@ pub(super) fn complete_endpoint_activation(
     };
     state.unfreeze_presentation();
     if successor.is_none() {
+        if let Some(shell) = state.shell.as_mut() {
+            let actions = shell.take_local_home_workspace_actions();
+            dispatch_client_shell_actions(
+                actions,
+                endpoint_commands,
+                endpoints,
+                Some(shell),
+                &mut state.detached_process_children,
+                &mut None,
+            )?;
+        }
         let active_endpoint = endpoints.active_id().clone();
         let cancelled = endpoint_commands.send_next(&active_endpoint, endpoints);
         if let Some(shell) = state.shell.as_mut() {
@@ -522,6 +553,7 @@ pub(super) fn present_handoff_unavailable(
     // source output blocked, while allowing this client-owned chrome frame through the freeze.
     state.freeze_presentation();
     let frame = state.shell.as_mut().and_then(|shell| {
+        shell.cancel_local_home_workspaces();
         if let Some(machine) = machine {
             shell.receive_machine_unavailable(machine, message);
         } else {
@@ -541,6 +573,9 @@ pub(super) fn rollback_endpoint_activation(
     error: String,
     source_release_rejected: bool,
 ) {
+    if let Some(shell) = state.shell.as_mut() {
+        shell.cancel_local_home_workspaces();
+    }
     let Some(activation) = pending.as_mut() else {
         return;
     };

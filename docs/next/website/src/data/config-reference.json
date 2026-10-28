@@ -506,6 +506,12 @@
           "description": "Create a new workspace."
         },
         {
+          "key": "keys.new_local_workspace",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Create and focus a new workspace in the client home directory on Local, even when a remote is selected. Does not prompt for a name or fall back to a remote if Local is unavailable."
+        },
+        {
           "key": "keys.new_worktree",
           "type": "keybinding",
           "default": "\"prefix+shift+g\"",
