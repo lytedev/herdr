@@ -239,7 +239,7 @@ pub(super) fn begin_endpoint_activation(
         return Ok(());
     }
     state.deferred_local_activation = None;
-    if !endpoint_id.is_local() || !local_activation_metadata_ready(state, endpoints) {
+    if !endpoint_id.is_local() {
         if let Some(shell) = state.shell.as_mut() {
             shell.cancel_local_home_workspaces();
         }
@@ -452,8 +452,10 @@ pub(super) fn complete_endpoint_activation(
             successor: next,
             ..
         } => {
-            if let Some(shell) = state.shell.as_mut() {
-                shell.cancel_local_home_workspaces();
+            if state.deferred_local_activation.is_none() {
+                if let Some(shell) = state.shell.as_mut() {
+                    shell.cancel_local_home_workspaces();
+                }
             }
             if next.is_none() {
                 if let Some(shell) = state.shell.as_mut() {

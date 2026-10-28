@@ -158,12 +158,11 @@ fn local_boot_change_or_wrong_active_endpoint_cannot_release_queued_creation() {
     }
 }
 
-#[test]
-fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
+fn assert_local_home_runtime_dispatch(metadata_ready: bool) {
     use crate::client::{
         endpoint::{EndpointNegotiation, EndpointRegistry, EndpointTransport},
         endpoint_commands::EndpointCommands,
-        shell_runtime::begin_endpoint_activation,
+        shell_runtime::{begin_endpoint_activation, take_ready_local_activation},
         ClientState,
     };
     struct Capture(std::sync::Arc<std::sync::Mutex<Vec<ClientMessage>>>);
@@ -181,7 +180,7 @@ fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
     let remote_sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut endpoints = EndpointRegistry::new(
         Capture(local_sent.clone()),
-        1,
+        if metadata_ready { 1 } else { 2 },
         EndpointNegotiation::default(),
     );
     endpoints.insert(
@@ -191,6 +190,7 @@ fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
         EndpointNegotiation::default(),
         false,
     );
+    shell.set_endpoint_snapshot_for_generation(&ClientEndpointId::Local, 1, Box::new(snapshot()));
     request_home_workspace(&mut shell);
     let mut state = ClientState::test_new();
     state.shell = Some(shell);
@@ -207,9 +207,58 @@ fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
         &mut None,
     )
     .expect("Local-active runtime activation must succeed");
+    if !metadata_ready {
+        let deferred_messages = local_sent
+            .lock()
+            .expect("Local captured requests must be readable before metadata arrives")
+            .clone();
+        assert!(
+            deferred_messages.is_empty(),
+            "Local-home creation must wait for current-generation metadata, but sent {deferred_messages:?}"
+        );
+        let shell = state
+            .shell
+            .as_mut()
+            .expect("The client shell must remain available");
+        assert_eq!(
+            shell.pending_local_workspaces.len(),
+            1,
+            "Waiting for Local metadata must retain the requested home workspace"
+        );
+        shell.set_endpoint_snapshot_for_generation(
+            &ClientEndpointId::Local,
+            2,
+            Box::new(snapshot()),
+        );
+        let deferred_activation = take_ready_local_activation(&mut state, &endpoints);
+        assert!(
+            matches!(
+                deferred_activation,
+                Some(crate::client::ClientLoopEvent::ActivateEndpoint {
+                    endpoint_id: ClientEndpointId::Local,
+                    ..
+                })
+            ),
+            "Current-generation metadata must resume the deferred Local activation"
+        );
+        begin_endpoint_activation(
+            &mut state,
+            &mut endpoints,
+            &mut EndpointCommands::default(),
+            &mut None,
+            &mut 1,
+            ClientEndpointId::Local,
+            None,
+            false,
+            std::time::Instant::now(),
+            &mut None,
+        )
+        .expect("Deferred Local activation must dispatch the retained home workspace");
+    }
     let messages = local_sent
         .lock()
-        .expect("Local captured requests must be readable");
+        .expect("Local captured requests must be readable")
+        .clone();
     assert!(matches!(messages.as_slice(), [ClientMessage::ClientShellEndpointRequest { request, .. }]
         if serde_json::from_str::<crate::api::schema::Request>(request).is_ok_and(|request|
             matches!(request.method, crate::api::schema::Method::WorkspaceCreate(params)
@@ -217,11 +266,22 @@ fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
         "The activation runtime must send one explicit home workspace.create to Local, but sent {messages:?}");
     let remote_messages = remote_sent
         .lock()
-        .expect("Remote captured requests must be readable");
+        .expect("Remote captured requests must be readable")
+        .clone();
     assert!(
         remote_messages.is_empty(),
         "Local-home creation must never reach the remote transport, but sent {remote_messages:?}"
     );
+}
+
+#[test]
+fn local_active_runtime_dispatches_home_creation_only_to_local_transport() {
+    assert_local_home_runtime_dispatch(true);
+}
+
+#[test]
+fn local_home_workspace_survives_waiting_for_current_generation_metadata() {
+    assert_local_home_runtime_dispatch(false);
 }
 
 #[test]
